@@ -12,7 +12,6 @@ params.nonPARregion="chrX:2781479-153925834"
 nextflow.enable.dsl=2
 
 process prepareVCFs {
-    conda 'bcftools=1.20-0'
     container 'staphb/bcftools:1.20'
     input:
     tuple val(name), path(vcf)
@@ -34,7 +33,6 @@ process prepareVCFs {
 }
 
 process initialstat {
-    conda 'bcftools=1.20-0'
     container 'staphb/bcftools:1.20'
     input:
     tuple val(name), path(vcf), path(index)
@@ -48,7 +46,6 @@ process initialstat {
     '''
 }
 process filteredstat {
-    conda 'bcftools=1.20-0'
     container 'staphb/bcftools:1.20'
     input:
     tuple val(name), path(vcf), path(index)
@@ -63,7 +60,6 @@ process filteredstat {
 }
 
 process filterVCFs {
-    conda 'bcftools=1.20-0'
     container 'staphb/bcftools:1.20'
     input:
     tuple val(name), path(vcf), path(index)
@@ -84,7 +80,6 @@ process filterVCFs {
 
 
 process mergeVCFs {
-    conda 'bcftools=1.20-0'
     container 'staphb/bcftools:1.20'
     input:
     path(vcfs)
@@ -104,7 +99,6 @@ process mergeVCFs {
 
 
 process relatedness {
-    conda 'vcftools=0.1.16-10'
     container 'biocontainers/vcftools:v0.1.16-1-deb_cv1'
     input:
     tuple path(vcf), path(index)
@@ -139,7 +133,6 @@ process xhetyaml{
 
 
 process xhet{
-    conda 'bcftools=1.20-0'
     container 'staphb/bcftools:1.20'
     input:
     path(xhetyaml)
