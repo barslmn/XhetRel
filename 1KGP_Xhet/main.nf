@@ -33,7 +33,7 @@ process createbedfile {
         split($1, chrom, ".");
         split($9, info, "ID=");
         split(info[2], id, ";");
-        printf "%s\\t%s\\t%s\\t%s\\n", chrom[1], $4, $5, id[1]}' |
+        printf "%s\t%s\t%s\t%s\n", chrom[1], $4, $5, id[1]}' |
     grep "NM" |
     gzip -c > "!{params.exons}" &&
     echo "INFO: BED file created at !{params.exons}" ||
@@ -125,17 +125,76 @@ process createbedgraph {
     shell:
     '''
     zcat !{params.genotypes} | awk -F"\t" 'BEGIN {
-        print "track type=bedGraph visibility=full color=200,100,0 altColor=0,100,200"
+        print "track type=bedGraph visibility=full color=255,153,0 altColor=0,0,0"
     }
     {
       count = 0
       for (i = 3; i <= NF; i++) {
         if ($i == "0/1") count++
       }
-      print $1, $2, $2, count
+      printf "%s\t%s\t%s\t%s\n" $1, $2, $2, count
     }' > !{params.bedgraph} &&
     echo "INFO: BedGraph file created at !{params.bedgraph}" ||
     echo "ERROR: An error occurred while creating BedGraph file"
+    '''
+}
+
+process creategenebed {
+    output:
+    path "genes.bed"
+
+    shell:
+    '''
+    wget -q -O- "!{params.annot_url}" |
+    zcat |
+    grep  'NC_000023' |
+    awk -F"\t" -v feature="gene" '
+        /^#!/ {print}
+        /^##/ {next}
+        $3 ~ feature {
+        sub(/^NC_[0]+/, "chr");
+        sub(/^chr23/, "chrX");
+        split($1, chrom, ".");
+        split($9, info, "ID=");
+        split(info[2], id, ";");
+        printf "%s\t%s\t%s\t%s\n", chrom[1], $4, $5, id[1]}' |
+    gzip -c > "genes.bed.gz" &&
+    echo "INFO: BED file created at genes.bed" ||
+    echo "ERROR: An error occurred while creating BED file at genes.bed"
+    '''
+}
+
+process getgenecounts {
+
+    input:
+    path(genotype_counts), path(genes_bed)
+
+    output:
+    path "genotype_counts_by_gene.txt"
+
+    shell:
+    '''
+    bedtools intersect \
+        -a !{genotype_counts} \
+        -b !{genes_bed} -wb |
+        awk '{printf "%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $4, $8}' |
+        datamash -s -g 5 sum 4 |
+        sort -k 2,2n > genotype_counts_per_gene_by_sum.txt
+
+    bedtools intersect \
+        -a !{genotype_counts} \
+        -b !{genes_bed} -wb |
+        awk '{printf "%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $4, $8}' |
+        datamash -s -g 5 count 4 |
+        sort -k 2,2n > genotype_counts_per_gene_by_count.txt
+
+    tail -n 20 genotype_counts_per_gene_by_sum.txt | sort > top_20_genes_by_sum_sorted_by_name.txt
+    zcat genes.bed.gz | awk '{printf "%s\t%s\t%s\t%s\n", $4,$1,$2,$3}' | sort -k 1,1 > genes_sorted_by_name.bed
+    join top_20_genes_by_sum_sorted_by_name.txt genes_sorted_by_name.bed | awk '{printf "%s\t%s\t%s\t%s\n", $3, $4, $5, $1}'> top_20_genes_by_sum_with_positions.bed
+
+    tail -n 20 genotype_counts_per_gene_by_count.txt | sort > top_20_genes_by_count_sorted_by_name.txt
+    zcat genes.bed.gz | awk '{printf "%s\t%s\t%s\t%s\n", $4,$1,$2,$3}' | sort -k 1,1 > genes_sorted_by_name.bed
+    join top_20_genes_by_count_sorted_by_name.txt genes_sorted_by_name.bed | awk '{printf "%s\t%s\t%s\t%s\n", $3, $4, $5, $1}'> top_20_genes_by_count_with_positions.bed
     '''
 }
 
@@ -154,4 +213,9 @@ workflow {
     mergebcf(bcfs.collect())
     getgenotypes(mergebcf.out)
     createbedgraph(getgenotypes.out)
+    creategenebed()
+    getgenecounts(
+        createbedgraph.out
+        creategenebed.out
+    )
 }

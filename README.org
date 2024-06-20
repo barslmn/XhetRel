@@ -1,0 +1,10 @@
+#+title: XhetRel
+
+X heterozygosity and relatedness analysis from VCF files
+
+
+* Introduction
+
+* How to use
+
+* Installation
