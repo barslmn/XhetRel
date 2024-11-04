@@ -6,7 +6,7 @@
 * Introduction :ATTACH:
 This repository is an analysis pipeline for X heterozygosity and relatedness from exome sequencing VCF files.
 
-[[attachment:_20241104_130742screenshot.png]]
+[[file:docs/_20241104_130742screenshot.png]]
 
 * How to use
 You can either run the Google colab version or run it on your machine.
