@@ -15,7 +15,31 @@ params.base_url = 'https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1
 params.genotypes = "genotypes.tsv.gz"
 params.bedgraph = "genotype_counts.bedGraph"
 
-process createbedfile {
+
+workflow {
+    getsamplesheet()
+    samplesheet = getsamplesheet.out
+    samplesheet
+        .splitCsv(header:["sample", "sex", "population_code"],
+            sep:"\t",
+            skip:1
+        )
+        .filter { row -> row.sex == "male" && row.population_code }
+        | set {samples}
+    createexonbed()
+    bcfs = getfiltervcf(samples, createexonbed.out)
+    mergebcf(bcfs.collect())
+    getgenotypes(mergebcf.out)
+    createbedgraph(getgenotypes.out)
+    creategenebed()
+    getgenecounts(
+        createbedgraph.out,
+        creategenebed.out
+    )
+}
+
+
+process createexonbed {
     output:
     path("${params.exons}")
 
@@ -33,7 +57,7 @@ process createbedfile {
         split($1, chrom, ".");
         split($9, info, "ID=");
         split(info[2], id, ";");
-        printf "%s\t%s\t%s\t%s\n", chrom[1], $4, $5, id[1]}' |
+        printf "%s\\t%s\\t%s\\t%s\\n", chrom[1], $4, $5, id[1]}' |
     grep "NM" |
     gzip -c > "!{params.exons}" &&
     echo "INFO: BED file created at !{params.exons}" ||
@@ -50,8 +74,6 @@ process getsamplesheet {
     curl '!{params.samples_url}' --data-raw '!{params.samples_data}' -o "!{params.samples_info}" &&
     echo "INFO: Samples info file downloaded at !{params.samples_info}" ||
     echo "ERROR: An error occurred while downloading samples info file at !{params.samples_info}"
-    # TODO: this is for testing remove afterwards
-    sed -i 10q '!{params.samples_info}'
     '''
 }
 
@@ -70,13 +92,17 @@ process getfiltervcf {
     '''
     url="!{params.base_url}/!{population_code}/Sample_!{sample}/analysis/!{sample}.haplotypeCalls.er.raw.vcf.gz"
 
-    bcftools view "$url" \
-        -r chrX:2781479-153925834 \
-        -T "!{exons}" \\
-        -v snps \
-        -f .,PASS \
-        -i 'GT=="0/1" && FORMAT/DP>=20' \
-        -Ob -o !{sample}.bcf
+    bcftools view "$url" -Ou \
+            -r chrX:2781479-153925834 \
+            -T "!{exons}" \
+            -v snps \
+            -f .,PASS \
+            -i 'FORMAT/AD=1 && FORMAT/GT="0/1" && FORMAT/DP>=20' |
+        bcftools norm -m-any |
+        bcftools view -i 'ALT!="<NON_REF>"' |
+        bcftools +fill-tags -Ou -- -t VAF |
+        bcftools view \
+            -Ob -o !{sample}.bcf
     bcftools index !{sample}.bcf
     '''
 }
@@ -132,7 +158,7 @@ process createbedgraph {
       for (i = 3; i <= NF; i++) {
         if ($i == "0/1") count++
       }
-      printf "%s\t%s\t%s\t%s\n" $1, $2, $2, count
+    printf "%s\\t%s\\t%s\\t%s\\n", $1, $2, $2, count
     }' > !{params.bedgraph} &&
     echo "INFO: BedGraph file created at !{params.bedgraph}" ||
     echo "ERROR: An error occurred while creating BedGraph file"
@@ -141,7 +167,7 @@ process createbedgraph {
 
 process creategenebed {
     output:
-    path "genes.bed"
+    path "genes.bed.gz"
 
     shell:
     '''
@@ -157,20 +183,22 @@ process creategenebed {
         split($1, chrom, ".");
         split($9, info, "ID=");
         split(info[2], id, ";");
-        printf "%s\t%s\t%s\t%s\n", chrom[1], $4, $5, id[1]}' |
+        printf "%s\\t%s\\t%s\\t%s\\n", chrom[1], $4, $5, id[1]}' |
     gzip -c > "genes.bed.gz" &&
-    echo "INFO: BED file created at genes.bed" ||
-    echo "ERROR: An error occurred while creating BED file at genes.bed"
+    echo "INFO: BED file created at genes.bed.gz" ||
+    echo "ERROR: An error occurred while creating BED file at genes.bed.gz"
     '''
 }
 
 process getgenecounts {
 
     input:
-    path(genotype_counts), path(genes_bed)
+    path genotype_counts
+    path genes_bed
 
     output:
-    path "genotype_counts_by_gene.txt"
+    path "top_20_genes_by_sum_with_positions.bed"
+    path "top_20_genes_by_count_with_positions.bed"
 
     shell:
     '''
@@ -188,34 +216,20 @@ process getgenecounts {
         datamash -s -g 5 count 4 |
         sort -k 2,2n > genotype_counts_per_gene_by_count.txt
 
-    tail -n 20 genotype_counts_per_gene_by_sum.txt | sort > top_20_genes_by_sum_sorted_by_name.txt
-    zcat genes.bed.gz | awk '{printf "%s\t%s\t%s\t%s\n", $4,$1,$2,$3}' | sort -k 1,1 > genes_sorted_by_name.bed
-    join top_20_genes_by_sum_sorted_by_name.txt genes_sorted_by_name.bed | awk '{printf "%s\t%s\t%s\t%s\n", $3, $4, $5, $1}'> top_20_genes_by_sum_with_positions.bed
+    tail -n 20 genotype_counts_per_gene_by_sum.txt |
+        sort > top_20_genes_by_sum_sorted_by_name.txt
+    zcat genes.bed.gz |
+        awk '{printf "%s\t%s\t%s\t%s\n", $4,$1,$2,$3}' |
+        sort -k 1,1 > genes_sorted_by_name.bed
+    join top_20_genes_by_sum_sorted_by_name.txt genes_sorted_by_name.bed |
+        awk '{printf "%s\t%s\t%s\t%s\n", $3, $4, $5, $1}'> top_20_genes_by_sum_with_positions.bed
 
-    tail -n 20 genotype_counts_per_gene_by_count.txt | sort > top_20_genes_by_count_sorted_by_name.txt
-    zcat genes.bed.gz | awk '{printf "%s\t%s\t%s\t%s\n", $4,$1,$2,$3}' | sort -k 1,1 > genes_sorted_by_name.bed
-    join top_20_genes_by_count_sorted_by_name.txt genes_sorted_by_name.bed | awk '{printf "%s\t%s\t%s\t%s\n", $3, $4, $5, $1}'> top_20_genes_by_count_with_positions.bed
+    tail -n 20 genotype_counts_per_gene_by_count.txt |
+        sort > top_20_genes_by_count_sorted_by_name.txt
+    zcat genes.bed.gz |
+        awk '{printf "%s\t%s\t%s\t%s\n", $4,$1,$2,$3}' |
+        sort -k 1,1 > genes_sorted_by_name.bed
+    join top_20_genes_by_count_sorted_by_name.txt genes_sorted_by_name.bed |
+        awk '{printf "%s\t%s\t%s\t%s\n", $3, $4, $5, $1}'> top_20_genes_by_count_with_positions.bed
     '''
-}
-
-workflow {
-    getsamplesheet()
-    samplesheet = getsamplesheet.out
-    samplesheet
-        .splitCsv(header:["sample", "sex", "population_code"],
-            sep:"\t",
-            skip:1
-        )
-        .filter { row -> row.sex == "male" && row.population_code }
-        | set {samples}
-    createbedfile()
-    bcfs = getfiltervcf(samples, createbedfile.out)
-    mergebcf(bcfs.collect())
-    getgenotypes(mergebcf.out)
-    createbedgraph(getgenotypes.out)
-    creategenebed()
-    getgenecounts(
-        createbedgraph.out
-        creategenebed.out
-    )
 }
