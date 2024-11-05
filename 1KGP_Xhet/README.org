@@ -1,0 +1,27 @@
+:PROPERTIES:
+:ID:       91bd7d5d-4ac4-4979-aae4-7def27a4cb2f
+:DIR:      ~/Desktop/Workbench/XhetRel/1KGP_Xhet/docs
+:END:
+#+title: Readme
+
+* Introduction
+This is the page for investigating X heterozygosity in 1000 Genome Project.
+Analysis performed by gathering the male samples, filtering and merging the variants and counting the genotypes.
+Genotype counts are then visualized using IGV
+
+[[file:docs/_20241104_144002screenshot.png]]
+
+* Results
+Top 20 genes can be seen in the txt files.
+
+[[file:docs/chrX.png]]
+
+The list of major chromosome X regions has been acquired from the 2019 Webster  et al. [cite:@websterIdentifyingUnderstandingCorrecting2019]
+The list of low complexity and ampliconic regions has been acquired from the 2019 Cotter et al. [cite:@cotterGeneticDiversityHuman2016]
+
+* Reproducing the results
+The pipeline can be run with nextflow and docker.
+
+#+begin_src shell
+nextflow main.nf
+#+end_src
