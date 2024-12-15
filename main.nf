@@ -3,10 +3,10 @@
 params.input_dir = './'
 params.output_dir = './'
 
- // Works for all three assemblies;start position is from GRCh38, end position is from T2T.
- // We are just taking the smallest matching region all three assemblies in order
- // to escape the PAR regions in any of them.
- // https://en.wikipedia.org/wiki/Pseudoautosomal_region
+// Works for all three assemblies; start position is from GRCh38, end position is from T2T.
+// We are just taking the smallest matching region all three assemblies in order
+// to escape the PAR regions in any of them.
+// https://en.wikipedia.org/wiki/Pseudoautosomal_region
 params.nonPARregion="chrX:2781479-153925834"
 
 nextflow.enable.dsl=2
@@ -17,18 +17,37 @@ process prepareVCFs {
     tuple val(name), path(vcf)
 
     output:
-    tuple val(name), path("${name}.vcf.gz"), path("${name}.vcf.gz.csi")
+    tuple val(name), path("${name}*.vcf.gz"), path("${name}*.vcf.gz.csi")
 
     shell:
     '''
+    # Check if the file is gzipped
     if [[ $(od -t x1 "!{vcf}" | sed 1q | cut -d " " -f2,3) == "1f 8b" ]]; then
-      :
+        cp !{vcf} input.vcf.gz
     else
-      echo "File !{vcf} is plain text."
-      bgzip -c !{vcf}> !{name}.vcf.gz;
+        echo "File !{vcf} is plain text."
+        bgzip -c !{vcf} > input.vcf.gz
     fi
 
-    bcftools index !{name}.vcf.gz;
+    # Index the input VCF
+    bcftools index input.vcf.gz
+
+    # Get the number of samples in the VCF
+    num_samples=$(bcftools query -l input.vcf.gz | wc -l)
+
+    if [ $num_samples -eq 1 ]; then
+        # Single-sample VCF
+        mv input.vcf.gz !{name}.vcf.gz
+        mv input.vcf.gz.csi !{name}.vcf.gz.csi
+    else
+        # Multi-sample VCF
+        bcftools query -l input.vcf.gz | while read sample; do
+            bcftools view -c1 -Oz -s $sample -o !{name}_${sample}.vcf.gz input.vcf.gz
+            bcftools index !{name}_${sample}.vcf.gz
+        done
+        # Remove the input.vcf.gz and its index
+        rm input.vcf.gz input.vcf.gz.csi
+    fi
     '''
 }
 
@@ -45,6 +64,7 @@ process initialstat {
     bcftools stats !{vcf} > "!{name}.stats"
     '''
 }
+
 process filteredstat {
     container 'staphb/bcftools:1.20'
     input:
@@ -78,7 +98,6 @@ process filterVCFs {
     '''
 }
 
-
 process mergeVCFs {
     container 'staphb/bcftools:1.20'
     input:
@@ -92,11 +111,10 @@ process mergeVCFs {
     mkdir merged/
     bcftools merge *.vcf.gz -Ou | \
     bcftools +fill-tags -- -t INFO/F_MISSING | \
-    bcftools view -i 'F_MISSING<.8' -Oz -o merged/merged.vcf.gz
+    bcftools view -i 'F_MISSING<.2' -Oz -o merged/merged.vcf.gz
     bcftools index -t merged/merged.vcf.gz
     '''
 }
-
 
 process relatedness {
     container 'biocontainers/vcftools:v0.1.16-1-deb_cv1'
@@ -130,7 +148,6 @@ process xhetyaml{
     data:' > Xhet_mqc.yaml
     '''
 }
-
 
 process xhet{
     container 'staphb/bcftools:1.20'
@@ -178,22 +195,40 @@ workflow {
         ]
     }
 
-    // vcf_files.view()
-    vcf_files = prepareVCFs(vcf_files)
-    filtered_vcfs = filterVCFs(vcf_files)
+    prepared_vcfs = prepareVCFs(vcf_files)
 
-    // filtered_vcfs.view()
-    filtered_vcfs .map {
-        name, vcf, index -> [vcf, index]
+    // Flatten the output of prepareVCFs for multi-sample VCFs
+    prepared_vcfs_flattened = prepared_vcfs.flatMap { name, vcfs, indices ->
+        vcfs.collect { vcf ->
+            // Remove the '.vcf.gz' suffix and extract the sample name
+            def sampleName = vcf.name.replaceAll(/\.vcf\.gz$/, '')
+            [sampleName, vcf, indices]
         }
-        .collect()
-        .set {filtered_vcfs_wo_names}
+    }
+
+    println("prepared vcfs flatten")
+    prepared_vcfs_flattened.view()
+    println("prepared vcfs flatten!!!")
+
+    // Run initial stats on the original VCFs
+    initial_stats = initialstat(prepared_vcfs_flattened)
+
+    // Continue with the rest of the workflow using the flattened prepared VCFs
+    filtered_vcfs = filterVCFs(prepared_vcfs_flattened)
+
+    filtered_vcfs.map {
+        name, vcf, index -> [vcf, index]
+    }
+    .collect()
+    .set { filtered_vcfs_wo_names }
+    println("filterd vcfs wo names!!!")
+    filtered_vcfs_wo_names.view()
+    println("filtered vcfs wo names!!!")
 
     merged_vcf = mergeVCFs(filtered_vcfs_wo_names)
     relatedness(merged_vcf)
     xhetyaml()
     xhet(xhetyaml.out, filtered_vcfs)
-    initial_stats = initialstat(vcf_files)
     filtered_stats = filteredstat(filtered_vcfs)
 
     Channel.empty()
@@ -202,8 +237,7 @@ workflow {
         .mix(initial_stats)
         .mix(filtered_stats)
         .collect()
-        .set{multiqc_files}
+        .set { multiqc_files }
 
-    // multiqc_files.view()
     multiqc(multiqc_files)
 }
