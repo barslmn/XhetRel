@@ -1,54 +1,42 @@
-:PROPERTIES:
-:DIR:      ~/Desktop/Workbench/XhetRel/docs/
-:END:
 #+title: XhetRel
+#+author: barslmn
+#+date: 2025-03-13
 
-* Introduction :ATTACH:
-This repository is an analysis pipeline for X heterozygosity and relatedness from exome sequencing VCF files.
+* Introduction
+XhetRel is an analysis pipeline for X chromosome heterozygosity and relatedness from exome sequencing VCF files.
 
 [[file:docs/_20241104_130742screenshot.png]]
 
-* How to use
-You can either run the Google colab version or run it on your machine.
-It can be access through the following the link below:
-https://colab.research.google.com/drive/1ep69JvXLwK5ndHUQ8qIGTWvauzsTW9fi
+* Features
+- Analyzes X chromosome heterozygosity patterns
+- Calculates relatedness metrics between samples
+- Integrates with MultiQC for visualization report
 
-In order to run it locally you will need nextflow.
-
-#+begin_src shell
-./nextflow XhetRel/main.nf --input_dir "$vcf_dir" --output_dir "/content"
-#+end_src
-
-
-VCF files should have AD columns.
+* Prerequisites
+- [[https://www.nextflow.io/docs/latest/getstarted.html][Nextflow]] (version 20.10.0 or later)
+- Input VCF files with AD (Allele Depth) columns
+- Either [[https://docs.docker.com/get-docker/][Docker]] (recommended) or the required bioinformatics tools
 
 * Installation
 
-** Clone the repo
+** Clone the repository
 #+begin_src shell
 git clone https://github.com/barslmn/XhetRel
 #+end_src
 
-** Installing the tools
-If you have docker nextflow will automatically fetch the tools required for the analysis.
+** Dependencies
+If you have Docker installed, Nextflow will automatically fetch the required containers.
 
-If you dont have docker installed, you either need to install docker or install the tools manually.
-
-Here how you can do so in a debian based system.
+If you prefer to install tools manually:
 #+begin_src shell
-git clone https://github.com/barslmn/XhetRel
-curl -s https://get.nextflow.io | bash
-
+# Install MultiQC
 pip install git+https://github.com/MultiQC/MultiQC
 
+# Install other required tools
 apt update -y
 apt install -y vcftools
 
-apt update -y
-apt install -y \
-  git gcc zlib1g-dev autoconf make \
-  liblzma-dev libbz2-dev libperl-dev \
-  libgsl-dev libcurl4-openssl-dev
+# Install bcftools
 git clone --branch 1.20 --recurse-submodules https://github.com/samtools/htslib.git
 git clone --branch 1.20 https://github.com/samtools/bcftools
 cd bcftools
@@ -56,6 +44,58 @@ autoheader && autoconf && ./configure --enable-libgsl --enable-perl-filters
 make
 make install
 cd ..
-rm -rf bcftools
-rm -rf htslib
+rm -rf bcftools htslib
 #+end_src
+
+* Usage
+
+** Online (Google Colab)
+Access the pipeline through Google Colab:
+https://colab.research.google.com/drive/1ep69JvXLwK5ndHUQ8qIGTWvauzsTW9fi
+
+** Local Execution
+Run the pipeline locally using Nextflow:
+
+#+begin_src shell
+nextflow run XhetRel/main.nf --input_dir "/path/to/vcf_files" --output_dir "/path/to/results"
+#+end_src
+
+*** Parameters
+- ~--input_dir~ : Directory containing VCF files (required)
+- ~--output_dir~ : Directory for results (required)
+- ~-profile docker~ : Use Docker containers (recommended)
+- ~-resume~ : Resume a previous run from the last successful step
+
+*** Examples
+#+begin_src shell
+# Basic run with Docker
+nextflow run XhetRel/main.nf --input_dir "~/data/vcfs" --output_dir "~/results" -profile docker
+
+# Resume a previous run
+nextflow run XhetRel/main.nf --input_dir "~/data/vcfs" --output_dir "~/results" -resume
+#+end_src
+
+* Input Requirements
+- VCF files must contain AD (Allele Depth) columns
+- Files should be placed in a single directory
+
+* Output
+The pipeline generates:
+- X chromosome heterozygosity metrics
+- Sample relatedness calculations
+- MultiQC summary report with plots
+
+* Troubleshooting
+- Ensure VCF files have AD columns
+- Check that Nextflow and Docker (if used) are properly installed
+- For detailed error logs, examine the ~work~ directory created by Nextflow
+
+* License
+MIT
+
+* Citation
+If you use XhetRel in your research, please cite:
+...
+
+* Contact
+If you have any questions: barslmn@gmail.com
