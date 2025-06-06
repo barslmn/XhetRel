@@ -1,4 +1,4 @@
-#+title: XhetRel
+#+title: XhetRel [[https://doi.org/10.5281/zenodo.15611818][https://zenodo.org/badge/802794557.svg]]
 #+author: barslmn
 #+date: 2025-03-13
 
