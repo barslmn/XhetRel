@@ -17,18 +17,95 @@ process prepareVCFs {
     tuple val(name), path(vcf)
 
     output:
-    tuple val(name), path("${name}.vcf.gz"), path("${name}.vcf.gz.csi")
+    tuple val(name), path("${name}.preprocessed.vcf.gz"), path("${name}.preprocessed.vcf.gz.csi")
 
     shell:
     '''
+    #!/bin/bash
+    set -e
+    set -o pipefail
+
+    # Define the final output name for clarity
+    FINAL_VCF="!{name}.preprocessed.vcf.gz"
+    INPUT_VCF="!{vcf}"
+
+    # --- 1. Standardize input to a compressed VCF ---
+    # Ensure the input VCF is gzipped and has the correct output name.
     if [[ $(od -t x1 "!{vcf}" | sed 1q | cut -d " " -f2,3) == "1f 8b" ]]; then
-      :
+        gzip -dc "$INPUT_VCF" | bgzip -c > "$FINAL_VCF"
     else
-      echo "File !{vcf} is plain text."
-      bgzip -c !{vcf}> !{name}.vcf.gz;
+        echo "File !{vcf} is plain text. Compressing to $FINAL_VCF"
+        bgzip -c "!{vcf}" > "$FINAL_VCF"
     fi
 
-    bcftools index !{name}.vcf.gz;
+    # --- 2. Unconditionally Add Custom VCF Headers ---
+    echo "  - Ensuring custom headers are present in $FINAL_VCF..."
+    OLD_HEADER="old_header"
+    NEW_HEADER="new_header"
+    TEMP_VCF="temp_vcf"
+    # Define the header lines to be added
+    HEADER_LINES='##FILTER=<ID=likely_sequence_context_artefAct,Description="likey sequence context artefact">
+##INFO=<ID=SBS,Number=.,Type=Float,Description="SBS">
+##INFO=<ID=SBP,Number=.,Type=Float,Description="SBP">
+##INFO=<ID=SBF,Number=.,Type=Float,Description="SBF">
+##INFO=<ID=SBT,Number=.,Type=Float,Description="SBT">
+##INFO=<ID=SBR,Number=.,Type=Float,Description="SBR">
+##INFO=<ID=DPHQ,Number=.,Type=Float,Description="DPHQ">
+##INFO=<ID=SVLEN,Number=A,Type=Integer,Description="Difference in length between REF and ALT alleles">
+##INFO=<ID=DETECTOR,Number=.,Type=Float,Description="DETECTOR">'
+
+    # Extract the header from the input VCF
+    bcftools view -h "$FINAL_VCF" > "$OLD_HEADER"
+
+    # Construct the new header by inserting the custom lines before the final header row
+    echo "$(sed \$d "$OLD_HEADER"; echo "$HEADER_LINES"; sed -n \$p "$OLD_HEADER")" > "$NEW_HEADER"
+
+    # Reheader the VCF file in-place
+    bcftools reheader -h "$NEW_HEADER" "$FINAL_VCF" | bcftools view -Oz -o "$TEMP_VCF" && mv "$TEMP_VCF" "$FINAL_VCF"
+
+    # Clean up temporary header files
+    rm -f "$OLD_HEADER" "$NEW_HEADER"
+    echo "  - Custom header check complete."
+
+
+    # --- 3. Check if AD annotation transfer is needed ---
+    if bcftools view -h "$FINAL_VCF" | grep -q '##INFO=<ID=AD,' && ! bcftools view -h "$FINAL_VCF" | grep -q '##FORMAT=<ID=AD,';
+    then
+        echo "Condition met: INFO/AD found and FORMAT/AD not found."
+        echo "Proceeding with AD annotation transfer..."
+
+        # Create temporary files for the AD transfer process
+        ANNOT_FILE="annot_file"
+        HEADER_FILE="header_file"
+        OUTPUT_VCF="temp_vcf"
+
+        # --- 4. Perform the Annotation Transfer ---
+        echo "  - Extracting INFO/AD to a temporary annotation file..."
+        bcftools query -f '%CHROM\t%POS\t%INFO/AD\n' "$FINAL_VCF" | bgzip -c > "${ANNOT_FILE}.gz"
+
+        echo "  - Indexing the temporary annotation file..."
+        tabix -s1 -b2 -e2 "${ANNOT_FILE}.gz"
+
+        echo "  - Creating a temporary header for the new FORMAT/AD field..."
+        bcftools view -h "$FINAL_VCF" | grep '##INFO=<ID=AD,' | sed 's/##INFO/##FORMAT/' > "$HEADER_FILE"
+
+        echo "  - Annotating the VCF to add FORMAT/AD..."
+        bcftools annotate -a "${ANNOT_FILE}.gz" -h "$HEADER_FILE" -c CHROM,POS,FORMAT/AD -o "$OUTPUT_VCF" -Oz "$FINAL_VCF"
+
+        echo "  - Overwriting VCF with the AD-transferred version..."
+        mv "$OUTPUT_VCF" "$FINAL_VCF"
+
+        echo "  - Cleaning up temporary files..."
+        rm -f "${ANNOT_FILE}.gz" "${ANNOT_FILE}.gz.tbi" "$HEADER_FILE"
+
+        echo "--- Transfer complete. ---"
+    else
+        echo "Skipping AD Transfer: VCF file does not require AD annotation transfer."
+        echo "--- No changes made for AD transfer. ---"
+    fi
+
+    # --- 5. Final Indexing ---
+    bcftools index "$FINAL_VCF"
     '''
 }
 
