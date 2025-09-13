@@ -54,14 +54,43 @@ process prepareVCFs {
 ##INFO=<ID=SVLEN,Number=A,Type=Integer,Description="Difference in length between REF and ALT alleles">
 ##INFO=<ID=DETECTOR,Number=.,Type=Float,Description="DETECTOR">'
 
+    CHR_MAP="chr_map"
+    cat > "$CHR_MAP" <<EOL
+1 chr1
+2 chr2
+3 chr3
+4 chr4
+5 chr5
+6 chr6
+7 chr7
+8 chr8
+9 chr9
+10 chr10
+11 chr11
+12 chr12
+13 chr13
+14 chr14
+15 chr15
+16 chr16
+17 chr17
+18 chr18
+19 chr19
+20 chr20
+21 chr21
+22 chr22
+X chrX
+Y chrY
+MT chrM
+EOL
+
     # Extract the header from the input VCF
     bcftools view -h "$FINAL_VCF" > "$OLD_HEADER"
 
     # Construct the new header by inserting the custom lines before the final header row
-    echo "$(sed \$d "$OLD_HEADER"; echo "$HEADER_LINES"; sed -n \$p "$OLD_HEADER")" > "$NEW_HEADER"
+    echo "$(sed \\$d "$OLD_HEADER"; echo "$HEADER_LINES"; sed -n \\$p "$OLD_HEADER")" > "$NEW_HEADER"
 
     # Reheader the VCF file in-place
-    bcftools reheader -h "$NEW_HEADER" "$FINAL_VCF" | bcftools view -Oz -o "$TEMP_VCF" && mv "$TEMP_VCF" "$FINAL_VCF"
+    bcftools reheader -h "$NEW_HEADER" "$FINAL_VCF" | bcftools annotate --rename-chrs "$CHR_MAP" | bcftools view -Oz -o "$TEMP_VCF" && mv "$TEMP_VCF" "$FINAL_VCF"
 
     # Clean up temporary header files
     rm -f "$OLD_HEADER" "$NEW_HEADER"
@@ -87,7 +116,7 @@ process prepareVCFs {
         tabix -s1 -b2 -e2 "${ANNOT_FILE}.gz"
 
         echo "  - Creating a temporary header for the new FORMAT/AD field..."
-        bcftools view -h "$FINAL_VCF" | grep '##INFO=<ID=AD,' | sed 's/##INFO/##FORMAT/' > "$HEADER_FILE"
+        echo '##FORMAT=<ID=AD,Number=.,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">' > "$HEADER_FILE"
 
         echo "  - Annotating the VCF to add FORMAT/AD..."
         bcftools annotate -a "${ANNOT_FILE}.gz" -h "$HEADER_FILE" -c CHROM,POS,FORMAT/AD -o "$OUTPUT_VCF" -Oz "$FINAL_VCF"
