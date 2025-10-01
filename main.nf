@@ -93,7 +93,7 @@ EOL
     bcftools reheader -h "$NEW_HEADER" "$FINAL_VCF" | bcftools annotate --rename-chrs "$CHR_MAP" | bcftools view -Oz -o "$TEMP_VCF" && mv "$TEMP_VCF" "$FINAL_VCF"
 
     # Clean up temporary header files
-    rm -f "$OLD_HEADER" "$NEW_HEADER"
+    rm -f "$OLD_HEADER" "$NEW_HEADER" "$CHR_MAP"
     echo "  - Custom header check complete."
 
     # --- 3. Check if AD annotation transfer is needed (Robust Check) ---
@@ -119,6 +119,23 @@ EOL
 
     if [[ "$TRANSFER_NEEDED" == "true" ]]; then
         echo "Proceeding with AD annotation transfer..."
+
+        # If the header has a misleading FORMAT/AD line, remove it first to prevent conflicts.
+        if bcftools view -h "$FINAL_VCF" | grep -q '##FORMAT=<ID=AD,'; then
+            echo "  - Misleading FORMAT/AD line found in header. Removing it before annotation..."
+            TEMP_VCF_NO_AD_HEADER="temp_vcf_no_ad"
+            MODIFIED_HEADER="modified_header"
+
+            # Create a new header file by excluding the old FORMAT/AD line
+            bcftools view -h "$FINAL_VCF" | grep -v '##FORMAT=<ID=AD,' > "$MODIFIED_HEADER"
+
+            # Reheader the VCF to remove the line
+            bcftools reheader -h "$MODIFIED_HEADER" "$FINAL_VCF" | bcftools view -Oz -o "$TEMP_VCF_NO_AD_HEADER"
+            mv "$TEMP_VCF_NO_AD_HEADER" "$FINAL_VCF"
+
+            rm -f "$MODIFIED_HEADER"
+            echo "  - Misleading FORMAT/AD line removed."
+        fi
 
         ANNOT_FILE="annot_file"
         HEADER_FILE="header_file"
