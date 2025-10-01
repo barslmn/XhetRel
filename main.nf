@@ -96,19 +96,35 @@ EOL
     rm -f "$OLD_HEADER" "$NEW_HEADER"
     echo "  - Custom header check complete."
 
+    # --- 3. Check if AD annotation transfer is needed (Robust Check) ---
+    TRANSFER_NEEDED=false
+    # First, ensure INFO/AD exists in the header, otherwise there's nothing to transfer.
+    if bcftools view -h "$FINAL_VCF" | grep -q '##INFO=<ID=AD,'; then
+        # Case 1: Header correctly says FORMAT/AD is missing. Transfer is needed.
+        if ! bcftools view -h "$FINAL_VCF" | grep -q '##FORMAT=<ID=AD,'; then
+            echo "Condition met: INFO/AD found and FORMAT/AD not declared in header."
+            TRANSFER_NEEDED=true
+        else
+            # Case 2: Header claims FORMAT/AD exists. We must verify the data records.
+            echo "Header claims FORMAT/AD exists. Verifying first data record..."
+            FIRST_FORMAT_FIELD=$(set +o pipefail; bcftools view -H "$FINAL_VCF" | head -n 1 | cut -f 9)
 
-    # --- 3. Check if AD annotation transfer is needed ---
-    if bcftools view -h "$FINAL_VCF" | grep -q '##INFO=<ID=AD,' && ! bcftools view -h "$FINAL_VCF" | grep -q '##FORMAT=<ID=AD,';
-    then
-        echo "Condition met: INFO/AD found and FORMAT/AD not found."
+            # Transfer if the first record exists but its FORMAT field lacks AD.
+            if [[ -n "$FIRST_FORMAT_FIELD" ]] && ! (echo "$FIRST_FORMAT_FIELD" | tr ':' '\n' | grep -qw "AD"); then
+                echo "Condition met: Header declares FORMAT/AD, but it is missing from the data records (e.g., '$FIRST_FORMAT_FIELD')."
+                TRANSFER_NEEDED=true
+            fi
+        fi
+    fi
+
+    if [[ "$TRANSFER_NEEDED" == "true" ]]; then
         echo "Proceeding with AD annotation transfer..."
 
-        # Create temporary files for the AD transfer process
         ANNOT_FILE="annot_file"
         HEADER_FILE="header_file"
         OUTPUT_VCF="temp_vcf"
 
-        # --- 4. Perform the Annotation Transfer ---
+        # Perform the Annotation Transfer
         echo "  - Extracting INFO/AD to a temporary annotation file..."
         bcftools query -f '%CHROM\t%POS\t%INFO/AD\n' "$FINAL_VCF" | bgzip -c > "${ANNOT_FILE}.gz"
 
