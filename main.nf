@@ -127,7 +127,7 @@ EOL
             MODIFIED_HEADER="modified_header"
 
             # Create a new header file by excluding the old FORMAT/AD line
-            bcftools view -h "$FINAL_VCF" | grep -v '##FORMAT=<ID=AD,'| grep -v '##FORMAT=<ID=AF,' > "$MODIFIED_HEADER"
+            bcftools view -h "$FINAL_VCF" | grep -v '##FORMAT=<ID=AD,' | sed "s/##INFO=<ID=AF,Number=1/##INFO=<ID=AF,Number=A/" > "$MODIFIED_HEADER"
 
             # Reheader the VCF to remove the line
             bcftools reheader -h "$MODIFIED_HEADER" "$FINAL_VCF" | bcftools view -Oz -o "$TEMP_VCF_NO_AD_HEADER"
@@ -149,8 +149,7 @@ EOL
         tabix -s1 -b2 -e2 "${ANNOT_FILE}.gz"
 
         echo "  - Creating a temporary header for the new FORMAT/AD field..."
-        echo '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">
-##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency, for each ALT allele, in the same order as listed">' > "$HEADER_FILE"
+        echo '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">' > "$HEADER_FILE"
 
         echo "  - Annotating the VCF to add FORMAT/AD..."
         bcftools annotate -a "${ANNOT_FILE}.gz" -h "$HEADER_FILE" -c CHROM,POS,FORMAT/AD -o "$OUTPUT_VCF" -Oz "$FINAL_VCF"
