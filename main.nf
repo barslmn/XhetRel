@@ -149,7 +149,7 @@ EOL
         tabix -s1 -b2 -e2 "${ANNOT_FILE}.gz"
 
         echo "  - Creating a temporary header for the new FORMAT/AD field..."
-        echo '##FORMAT=<ID=AD,Number=.,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">' > "$HEADER_FILE"
+        echo '##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles in the order listed">' > "$HEADER_FILE"
 
         echo "  - Annotating the VCF to add FORMAT/AD..."
         bcftools annotate -a "${ANNOT_FILE}.gz" -h "$HEADER_FILE" -c CHROM,POS,FORMAT/AD -o "$OUTPUT_VCF" -Oz "$FINAL_VCF"
