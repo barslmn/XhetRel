@@ -37,7 +37,7 @@ process prepareVCFs {
         echo "File !{vcf} is plain text. Compressing to $FINAL_VCF"
         bgzip -c "!{vcf}" > "$FINAL_VCF"
     fi
-
+    bcftools index "$FINAL_VCF"
     # --- 2. Unconditionally Add Custom VCF Headers ---
     echo "  - Ensuring custom headers are present in $FINAL_VCF..."
     OLD_HEADER="old_header"
