@@ -167,7 +167,7 @@ EOL
     fi
 
     # --- 5. Final Indexing ---
-    bcftools index "$FINAL_VCF"
+    bcftools index -f "$FINAL_VCF"
     '''
 }
 
