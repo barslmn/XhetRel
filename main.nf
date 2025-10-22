@@ -8,6 +8,10 @@ params.output_dir = './'
  // to escape the PAR regions in any of them.
  // https://en.wikipedia.org/wiki/Pseudoautosomal_region
 params.nonPARregion="chrX:2781479-153925834"
+params.vaf_threshold      = params.vaf_threshold ?: 0.25
+params.dp_threshold       = params.dp_threshold ?: 20
+params.qual_threshold     = params.qual_threshold ?: 0
+params.apply_pass_filter  = params.apply_pass_filter ?: true
 
 nextflow.enable.dsl=2
 
@@ -200,6 +204,7 @@ process filteredstat {
 
 process filterVCFs {
     container 'staphb/bcftools:1.20'
+
     input:
     tuple val(name), path(vcf), path(index)
 
@@ -207,14 +212,14 @@ process filterVCFs {
     tuple val(name), path("${name}.filtered.vcf.gz"), path("${name}.filtered.vcf.gz.csi")
 
     shell:
-    '''
-    bcftools +fill-tags !{vcf} -- -t FORMAT/VAF |
-    bcftools view \
-        -i 'FORMAT/VAF >= 0.25 && FORMAT/DP >= 20' \
-        -f .,PASS \
-        -Oz -o !{name}.filtered.vcf.gz
+    def filter_expr = "FORMAT/VAF >= ${params.vaf_threshold} && FORMAT/DP >= ${params.dp_threshold} && QUAL >= ${params.qual_threshold}"
+    def pass_filter = params.apply_pass_filter ? "-f .,PASS" : ""
+
+    """
+    bcftools +fill-tags !{vcf} -- -t FORMAT/VAF | bcftools annotate -x FORMAT/DP | bcftools +fill-tags -- -t 'FORMAT/DP:1=int(smpl_sum(FORMAT/AD))' |
+    bcftools view -i '${filter_expr}' ${pass_filter} -Oz -o !{name}.filtered.vcf.gz
     bcftools index !{name}.filtered.vcf.gz
-    '''
+    """
 }
 
 
