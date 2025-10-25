@@ -312,7 +312,7 @@ process multiqc {
 XhetRel:
   vaf_threshold: "${params.vaf_threshold}"
   dp_threshold: "${params.dp_threshold}"
-  qual_threshold: "${params.qual_threshold}"
+  gq_threshold: "${params.gq_threshold}"
   apply_pass_filter: "${params.apply_pass_filter}"
   nonPAR_region: "${params.nonPARregion}"
 EOF
