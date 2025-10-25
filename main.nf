@@ -10,7 +10,7 @@ params.output_dir = './'
 params.nonPARregion="chrX:2781479-153925834"
 params.vaf_threshold      = params.vaf_threshold ?: 0.25
 params.dp_threshold       = params.dp_threshold ?: 20
-params.qual_threshold     = params.qual_threshold ?: 0
+params.gq_threshold     = params.gq_threshold ?: 0
 params.apply_pass_filter  = params.apply_pass_filter ?: true
 
 nextflow.enable.dsl=2
@@ -212,7 +212,7 @@ process filterVCFs {
     tuple val(name), path("${name}.filtered.vcf.gz"), path("${name}.filtered.vcf.gz.csi")
 
     shell:
-    def filter_expr = "FORMAT/VAF >= ${params.vaf_threshold} && FORMAT/DP >= ${params.dp_threshold} && QUAL >= ${params.qual_threshold}"
+    def filter_expr = "FORMAT/VAF >= ${params.vaf_threshold} && FORMAT/DP >= ${params.dp_threshold} && FORMAT/GQ >= ${params.gq_threshold}"
     def pass_filter = params.apply_pass_filter ? "-f .,PASS" : ""
 
     """
@@ -307,10 +307,18 @@ process multiqc {
     path("*.html")
 
     shell:
-    '''
+    """
+    cat <<EOF > XhetRel_mqc.yaml
+XhetRel:
+  vaf_threshold: "${params.vaf_threshold}"
+  dp_threshold: "${params.dp_threshold}"
+  qual_threshold: "${params.qual_threshold}"
+  apply_pass_filter: "${params.apply_pass_filter}"
+  nonPAR_region: "${params.nonPARregion}"
+EOF
     multiqc --flat --force --fullnames --dirs --outdir . . --filename XhetRel_flat_multiqc_report.html
     multiqc --interactive --force --fullnames --dirs --outdir . . --filename XhetRel_interactive_multiqc_report.html
-    '''
+    """
 }
 
 workflow {
