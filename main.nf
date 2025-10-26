@@ -16,7 +16,7 @@ params.apply_pass_filter  = params.apply_pass_filter ?: true
 nextflow.enable.dsl=2
 
 process prepareVCFs {
-    container 'staphb/bcftools:1.20'
+    container 'docker.io/staphb/bcftools:1.20'
     input:
     tuple val(name), path(vcf)
 
@@ -33,14 +33,7 @@ process prepareVCFs {
     FINAL_VCF="!{name}.preprocessed.vcf.gz"
     INPUT_VCF="!{vcf}"
 
-    # --- 1. Standardize input to a compressed VCF ---
-    # Ensure the input VCF is gzipped and has the correct output name.
-    if [[ $(od -t x1 "!{vcf}" | sed 1q | cut -d " " -f2,3) == "1f 8b" ]]; then
-        gzip -dc "$INPUT_VCF" | bgzip -c > "$FINAL_VCF"
-    else
-        echo "File !{vcf} is plain text. Compressing to $FINAL_VCF"
-        bgzip -c "!{vcf}" > "$FINAL_VCF"
-    fi
+    bcftools view "$INPUT_VCF" -Oz -o "$FINAL_VCF"
     bcftools index "$FINAL_VCF"
     # --- 2. Unconditionally Add Custom VCF Headers ---
     echo "  - Ensuring custom headers are present in $FINAL_VCF..."
@@ -176,7 +169,7 @@ EOL
 }
 
 process initialstat {
-    container 'staphb/bcftools:1.20'
+    container 'docker.io/staphb/bcftools:1.20'
     input:
     tuple val(name), path(vcf), path(index)
 
@@ -189,7 +182,7 @@ process initialstat {
     '''
 }
 process filteredstat {
-    container 'staphb/bcftools:1.20'
+    container 'docker.io/staphb/bcftools:1.20'
     input:
     tuple val(name), path(vcf), path(index)
 
@@ -203,7 +196,7 @@ process filteredstat {
 }
 
 process filterVCFs {
-    container 'staphb/bcftools:1.20'
+    container 'docker.io/staphb/bcftools:1.20'
 
     input:
     tuple val(name), path(vcf), path(index)
@@ -224,7 +217,7 @@ process filterVCFs {
 
 
 process mergeVCFs {
-    container 'staphb/bcftools:1.20'
+    container 'docker.io/staphb/bcftools:1.20'
     input:
     path(vcfs)
 
@@ -243,7 +236,7 @@ process mergeVCFs {
 
 
 process relatedness {
-    container 'biocontainers/vcftools:v0.1.16-1-deb_cv1'
+    container 'quay.io/biocontainers/vcftools:0.1.17--pl5321h077b44d_0'
     input:
     tuple path(vcf), path(index)
 
@@ -277,7 +270,7 @@ process xhetyaml{
 
 
 process xhet{
-    container 'staphb/bcftools:1.20'
+    container 'docker.io/staphb/bcftools:1.20'
     input:
     path(xhetyaml)
     tuple val(name), path(vcf), path(index)
@@ -298,7 +291,7 @@ process xhet{
 }
 
 process multiqc {
-    container 'multiqc/multiqc:dev'
+    container 'docker.io/multiqc/multiqc:v1.23'
     publishDir "${params.output_dir}", mode: 'move'
     input:
     path(multiqc_files)
