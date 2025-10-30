@@ -8,9 +8,11 @@ params.output_dir = './'
  // to escape the PAR regions in any of them.
  // https://en.wikipedia.org/wiki/Pseudoautosomal_region
 params.nonPARregion="chrX:2781479-153925834"
+
+// Parametric filtering parameters (for Xhet analysis)
 params.vaf_threshold      = params.vaf_threshold ?: 0.25
 params.dp_threshold       = params.dp_threshold ?: 20
-params.gq_threshold     = params.gq_threshold ?: 0
+params.gq_threshold       = params.gq_threshold ?: 0
 params.apply_pass_filter  = params.apply_pass_filter ?: true
 
 nextflow.enable.dsl=2
@@ -174,35 +176,23 @@ process initialstat {
     tuple val(name), path(vcf), path(index)
 
     output:
-    path "${name}.stats"
+    path "${name}.initial.stats"
 
     shell:
     '''
-    bcftools stats !{vcf} > "!{name}.stats"
-    '''
-}
-process filteredstat {
-    container 'docker.io/staphb/bcftools:1.20'
-    input:
-    tuple val(name), path(vcf), path(index)
-
-    output:
-    path "${name}.filtered.stats"
-
-    shell:
-    '''
-    bcftools stats !{vcf} > "!{name}.filtered.stats"
+    bcftools stats !{vcf} > "!{name}.initial.stats"
     '''
 }
 
-process filterVCFs {
+// Filter for X heterozygosity analysis - uses parametric filtering
+process XhetFilter {
     container 'docker.io/staphb/bcftools:1.20'
 
     input:
     tuple val(name), path(vcf), path(index)
 
     output:
-    tuple val(name), path("${name}.filtered.vcf.gz"), path("${name}.filtered.vcf.gz.csi")
+    tuple val(name), path("${name}.xhet.filtered.vcf.gz"), path("${name}.xhet.filtered.vcf.gz.csi")
 
     shell:
     def filter_expr = "FORMAT/VAF >= ${params.vaf_threshold} && FORMAT/DP >= ${params.dp_threshold} && FORMAT/GQ >= ${params.gq_threshold}"
@@ -210,11 +200,56 @@ process filterVCFs {
 
     """
     bcftools +fill-tags !{vcf} -- -t FORMAT/VAF | bcftools annotate -x FORMAT/DP | bcftools +fill-tags -- -t 'FORMAT/DP:1=int(smpl_sum(FORMAT/AD))' |
-    bcftools view -i '${filter_expr}' ${pass_filter} -Oz -o !{name}.filtered.vcf.gz
-    bcftools index !{name}.filtered.vcf.gz
+    bcftools view -i '${filter_expr}' ${pass_filter} -Oz -o !{name}.xhet.filtered.vcf.gz
+    bcftools index !{name}.xhet.filtered.vcf.gz
     """
 }
 
+process xhetStat {
+    container 'docker.io/staphb/bcftools:1.20'
+    input:
+    tuple val(name), path(vcf), path(index)
+
+    output:
+    path "${name}.xhet.filtered.stats"
+
+    shell:
+    '''
+    bcftools stats !{vcf} > "!{name}.xhet.filtered.stats"
+    '''
+}
+
+// Filter for relatedness analysis - uses default filters (VAF=0.25, DP=20, PASS)
+process relatednessFilter {
+    container 'docker.io/staphb/bcftools:1.20'
+
+    input:
+    tuple val(name), path(vcf), path(index)
+
+    output:
+    tuple val(name), path("${name}.relatedness.filtered.vcf.gz"), path("${name}.relatedness.filtered.vcf.gz.csi")
+
+    shell:
+    """
+    bcftools +fill-tags !{vcf} -- -t FORMAT/VAF | bcftools annotate -x FORMAT/DP | bcftools +fill-tags -- -t 'FORMAT/DP:1=int(smpl_sum(FORMAT/AD))' |
+    bcftools view -i 'FORMAT/VAF >= 0.25 && FORMAT/DP >= 20' -f .,PASS -Oz -o !{name}.relatedness.filtered.vcf.gz
+    bcftools index !{name}.relatedness.filtered.vcf.gz
+    """
+}
+
+process relatednessStat {
+    container 'docker.io/staphb/bcftools:1.20'
+    input:
+    tuple val(name), path(vcf), path(index)
+
+    output:
+    path "${name}.relatedness.filtered.stats"
+
+    shell:
+    '''
+    bcftools stats !{vcf} > "!{name}.relatedness.filtered.stats"
+    '''
+}
 
 process mergeVCFs {
     container 'docker.io/staphb/bcftools:1.20'
@@ -229,11 +264,10 @@ process mergeVCFs {
     mkdir merged/
     bcftools merge *.vcf.gz -Ou | \
     bcftools +fill-tags -- -t INFO/F_MISSING | \
-    bcftools view -i 'F_MISSING<.8' -Oz -o merged/merged.vcf.gz
+    bcftools view -i 'F_MISSING<0.2' -Oz -o merged/merged.vcf.gz
     bcftools index -t merged/merged.vcf.gz
     '''
 }
-
 
 process relatedness {
     container 'quay.io/biocontainers/vcftools:0.1.17--pl5321h077b44d_0'
@@ -267,7 +301,6 @@ process xhetyaml{
     data:' > Xhet_mqc.yaml
     '''
 }
-
 
 process xhet{
     container 'docker.io/staphb/bcftools:1.20'
@@ -303,10 +336,13 @@ process multiqc {
     """
     cat <<EOF > XhetRel_mqc.yaml
 XhetRel:
-  vaf_threshold: "${params.vaf_threshold}"
-  dp_threshold: "${params.dp_threshold}"
-  gq_threshold: "${params.gq_threshold}"
-  apply_pass_filter: "${params.apply_pass_filter}"
+  parametric_filter_vaf_threshold: "${params.vaf_threshold}"
+  parametric_filter_dp_threshold: "${params.dp_threshold}"
+  parametric_filter_gq_threshold: "${params.gq_threshold}"
+  parametric_filter_apply_pass_filter: "${params.apply_pass_filter}"
+  relatedness_filter_vaf_threshold: "0.25"
+  relatedness_filter_dp_threshold: "20"
+  relatedness_filter_apply_pass_filter: "true"
   nonPAR_region: "${params.nonPARregion}"
 EOF
     multiqc --flat --force --fullnames --dirs --outdir . . --filename XhetRel_flat_multiqc_report.html
@@ -323,32 +359,43 @@ workflow {
         ]
     }
 
-    // vcf_files.view()
+    // Prepare VCFs
     vcf_files = prepareVCFs(vcf_files)
-    filtered_vcfs = filterVCFs(vcf_files)
-
-    // filtered_vcfs.view()
-    filtered_vcfs .map {
-        name, vcf, index -> [vcf, index]
-        }
-        .collect()
-        .set {filtered_vcfs_wo_names}
-
-    merged_vcf = mergeVCFs(filtered_vcfs_wo_names)
-    relatedness(merged_vcf)
-    xhetyaml()
-    xhet(xhetyaml.out, filtered_vcfs)
+    
+    // Get initial stats
     initial_stats = initialstat(vcf_files)
-    filtered_stats = filteredstat(filtered_vcfs)
-
+    
+    // Split into two branches for parallel filtering
+    // Branch 1: Parametric filtering for Xhet analysis
+    xhet_filtered = XhetFilter(vcf_files)
+    xhet_stats = xhetStat(xhet_filtered)
+    
+    // Branch 2: Default filtering for relatedness analysis
+    relatedness_filtered = relatednessFilter(vcf_files)
+    relatedness_stats = relatednessStat(relatedness_filtered)
+    
+    // Merge filtered VCFs for relatedness analysis
+    relatedness_filtered
+        .map { name, vcf, index -> [vcf, index] }
+        .collect()
+        .set { relatedness_vcfs_wo_names }
+    
+    merged_vcf = mergeVCFs(relatedness_vcfs_wo_names)
+    relatedness(merged_vcf)
+    
+    // Xhet analysis on parametric filtered VCFs
+    xhetyaml()
+    xhet(xhetyaml.out, xhet_filtered)
+    
+    // Collect all outputs for MultiQC
     Channel.empty()
         .mix(relatedness.out)
         .mix(xhetyaml.out)
         .mix(initial_stats)
-        .mix(filtered_stats)
+        .mix(xhet_stats)
+        .mix(relatedness_stats)
         .collect()
-        .set{multiqc_files}
+        .set { multiqc_files }
 
-    // multiqc_files.view()
     multiqc(multiqc_files)
 }
