@@ -351,7 +351,7 @@ EOF
 }
 
 workflow {
-    vcf_files = Channel.fromPath("${params.input_dir}/*{.vcf,.vcf.gz}")
+    vcf_files = Channel.fromPath("${params.input_dir}/*{.vcf,.vcf.gz,.bcf}")
     | map { vcf ->
         [
             vcf.baseName.split('.vcf')[0],
