@@ -10,10 +10,10 @@ params.output_dir = './'
 params.nonPARregion="chrX:2781479-153925834"
 
 // Parametric filtering parameters (for Xhet analysis)
-params.vaf_threshold      = params.vaf_threshold ?: 0.25
-params.dp_threshold       = params.dp_threshold ?: 20
-params.gq_threshold       = params.gq_threshold ?: 0
-params.apply_pass_filter  = params.apply_pass_filter ?: true
+params.vaf_threshold = 0.25
+params.dp_threshold = 20
+params.gq_threshold = 0
+params.apply_pass_filter = true
 
 nextflow.enable.dsl=2
 
