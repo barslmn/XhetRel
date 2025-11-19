@@ -184,7 +184,6 @@ process initialstat {
     '''
 }
 
-// Filter for X heterozygosity analysis - uses parametric filtering
 process XhetFilter {
     container 'docker.io/staphb/bcftools:1.20'
 
@@ -195,14 +194,26 @@ process XhetFilter {
     tuple val(name), path("${name}.xhet.filtered.vcf.gz"), path("${name}.xhet.filtered.vcf.gz.csi")
 
     shell:
-    def filter_expr = "FORMAT/VAF >= ${params.vaf_threshold} && FORMAT/DP >= ${params.dp_threshold} && FORMAT/GQ >= ${params.gq_threshold}"
-    def pass_filter = params.apply_pass_filter ? "-f .,PASS" : ""
+    '''
+    # Define base filter (VAF and DP)
+    FILTER_EXPR="FORMAT/VAF >= !{params.vaf_threshold} && FORMAT/DP >= !{params.dp_threshold}"
 
-    """
-    bcftools +fill-tags !{vcf} -- -t FORMAT/VAF | bcftools annotate -x FORMAT/DP | bcftools +fill-tags -- -t 'FORMAT/DP:1=int(smpl_sum(FORMAT/AD))' |
-    bcftools view -i '${filter_expr}' ${pass_filter} -Oz -o !{name}.xhet.filtered.vcf.gz
+    # Check if GQ exists in the header
+    if bcftools view -h !{vcf} | grep -q "##FORMAT=<ID=GQ,"; then
+        FILTER_EXPR="$FILTER_EXPR && FORMAT/GQ >= !{params.gq_threshold}"
+    else
+        echo "WARNING: GQ format field not found in !{name}. Skipping GQ filter."
+    fi
+
+    # Run the pipeline with the dynamic filter expression
+    # Note: We inline the ternary logic for the PASS filter directly into the !{} block
+    bcftools +fill-tags !{vcf} -- -t FORMAT/VAF | \
+    bcftools annotate -x FORMAT/DP | \
+    bcftools +fill-tags -- -t 'FORMAT/DP:1=int(smpl_sum(FORMAT/AD))' | \
+    bcftools view -i "$FILTER_EXPR" !{params.apply_pass_filter ? "-f .,PASS" : ""} -Oz -o !{name}.xhet.filtered.vcf.gz
+
     bcftools index !{name}.xhet.filtered.vcf.gz
-    """
+    '''
 }
 
 process xhetStat {
