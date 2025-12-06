@@ -342,8 +342,8 @@ process multiqc {
 
     output:
     path("*.html")
-    path("XhetRel_flat_multiqc_report_data/multiqc_plots/png/Xhet_plot.png")
-    path("XhetRel_flat_multiqc_report_data/multiqc_plots/png/vcftools-relatedness2-heatmap-1.png")
+    path("XhetRel_flat_multiqc_report_plots/png/Xhet_plot.png")
+    path("XhetRel_flat_multiqc_report_plots/vcftools-relatedness2-heatmap-1.png")
 
     shell:
     """
