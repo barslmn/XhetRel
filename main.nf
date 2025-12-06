@@ -342,6 +342,8 @@ process multiqc {
 
     output:
     path("*.html")
+    path("XhetRel_flat_multiqc_report_data/multiqc_plots/png/Xhet_plot.png")
+    path("XhetRel_flat_multiqc_report_data/multiqc_plots/png/vcftools-relatedness2-heatmap-1.png")
 
     shell:
     """
@@ -356,7 +358,7 @@ XhetRel:
   relatedness_filter_apply_pass_filter: "true"
   nonPAR_region: "${params.nonPARregion}"
 EOF
-    multiqc --flat --force --fullnames --dirs --outdir . . --filename XhetRel_flat_multiqc_report.html
+    multiqc --export --flat --force --fullnames --dirs --outdir . . --filename XhetRel_flat_multiqc_report.html
     multiqc --interactive --force --fullnames --dirs --outdir . . --filename XhetRel_interactive_multiqc_report.html
     """
 }
